@@ -262,6 +262,47 @@ static void trigger_key_up(btstack_timer_source_t * ts){
     hid_device_request_can_send_now_event(hid_cid);
 }
 
+static void send_next_has_mod(btstack_timer_source_t * ts, bool key_is_raw) {
+    // get next key from buffer
+    uint8_t character_pld[2]; // [u8 character, u8 modifier]
+    uint32_t num_bytes_read = 0;
+    btstack_ring_buffer_read(&send_buffer, (uint8_t*)&character_pld, 2, &num_bytes_read);
+    if (num_bytes_read == 0) {
+        // buffer empty, nothing to send
+        send_active = false;
+    } else if(num_bytes_read != 2) {
+        printf("Failed to read key modifier byte -- byte 2/2");
+        send_active = false;
+    } else {
+        send_active = true;
+
+        bool found = false;
+        if (!key_is_raw) { // lookup keycode using US layout
+            found = lookup_keycode(character_pld[0], keytable_us_none, sizeof(keytable_us_none), &send_keycode);
+            if (!found) {
+                found = lookup_keycode(character_pld[0], keytable_us_shift, sizeof(keytable_us_shift), &send_keycode);
+            }
+        }
+        else if ((uint8_t)character_pld[0] <= 100) { //raw HID code
+            send_keycode = (uint8_t)character_pld[0];
+            printf("Sending raw character w/ HID code: %d", character_pld[0]);
+            found = true;
+        }
+
+        if (found) {
+            //set modifier
+            send_modifier = character_pld[1];
+
+            // request can send now
+            hid_device_request_can_send_now_event(hid_cid);
+        } else {
+            // restart timer for next character
+            btstack_run_loop_set_timer(ts, TYPING_DELAY_MS);
+            btstack_run_loop_add_timer(ts);
+        }
+    }
+}
+
 static void send_next(btstack_timer_source_t * ts) {
     // get next key from buffer
     uint8_t character;
@@ -289,6 +330,15 @@ static void queue_character(char character){
     btstack_ring_buffer_write(&send_buffer, (uint8_t *) &character, 1);
     if (send_active == false) {
         send_next(&send_timer);
+    }
+}
+
+// queuing two bytes -- [ character (a,b, ... ', /, ...)] and [ modifier key (shift, Fn, etc...)]
+static void queue_character_and_mod(char key, uint8_t modifier, bool key_is_raw){
+    char key_and_mod[2] = {key, (char)modifier};
+    btstack_ring_buffer_write(&send_buffer, (uint8_t *)&key_and_mod, 2);
+    if (send_active == false) {
+        send_next_has_mod(&send_timer, key_is_raw);
     }
 }
 
@@ -421,6 +471,106 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
             break;
     }
 }
+static void send_serialized_input(char* input){
+    //remove newline at the end of str
+    size_t len = strlen(input);
+    if (len && (input[len-1] == '\n')) {
+        input[len-1] = '\0';
+    }
+
+    char* hunk = strtok(input, " ");
+    uint8_t modifier = 0x0;
+    uint8_t key_to_send = 0x0;
+    bool key_is_raw = false;
+    while (hunk != NULL) {
+        printf("Parsing hunk: '%s'\n", hunk);
+
+        if (strcmp(hunk, "enter") == 0) {
+            key_to_send = CHAR_RETURN;
+        }
+        else if (strcmp(hunk, "esc") == 0) {
+            key_to_send = CHAR_ESCAPE;
+        }
+        else if (strcmp(hunk, "bs") == 0) {
+            key_to_send = CHAR_BACKSPACE;
+        }
+        else if (strcmp(hunk, "tab") == 0) {
+            key_to_send = CHAR_TAB;
+        }
+        else if (strcmp(hunk, "space") == 0) {
+            key_to_send = ' ';
+        }
+        else if (strcmp(hunk, "raw") == 0) {
+            key_is_raw = true;
+        }
+        else if (strcmp(hunk, "del") == 0) {
+            key_is_raw = true;
+            key_to_send = (char)0x4c;
+        }
+        else if (strcmp(hunk, "rarrow") == 0) {
+            key_is_raw = true;
+            key_to_send = (char)0x4f;
+        }
+        else if (strcmp(hunk, "larrow") == 0) {
+            key_is_raw = true;
+            key_to_send = (char)0x50;
+        }
+        else if (strcmp(hunk, "dnarrow") == 0) {
+            key_is_raw = true;
+            key_to_send = (char)0x51;
+        }
+        else if (strcmp(hunk, "uparrow") == 0) {
+            key_is_raw = true;
+            key_to_send = (char)0x52;
+        }
+        else if (strcmp(hunk, "ctrl") == 0) {
+            modifier |= 0x01; //ctrl modifier
+        }
+        else if (strcmp(hunk, "shift") == 0) {
+            modifier |= 0x02; //shift modifier
+        }
+        else if (strcmp(hunk, "alt") == 0) {
+            modifier |= 0x04; //'option' (alt key) modifier
+        }
+        else if (strcmp(hunk, "meta") == 0) {
+            modifier |= 0x08; //'command' (meta key) modifier
+        }
+        else {
+            if (key_is_raw) { //looking for raw code #
+                int base = 10;
+                char* hex_pref = strstr(hunk, "x");
+                if (hex_pref != NULL) {
+                    base = 16;
+                }
+                uint8_t conv = (uint8_t)strtoul(hunk, NULL, base);
+                if (conv > 0 && conv <= 100) {
+                    key_to_send = (char)conv;
+                }
+                else {
+                    key_is_raw = false; //'raw' code parsing error
+                }
+            }
+            else { //single char
+                key_to_send = *hunk;
+            }
+        }
+
+        if (key_to_send) {
+            if (modifier || key_is_raw) {
+                queue_character_and_mod(key_to_send, modifier, key_is_raw);
+            }
+            else {
+                queue_character(key_to_send);
+            }
+
+            modifier = 0x0; //reset modifier
+            key_is_raw = false; //reset
+            key_to_send = 0x0; //reset key
+            usleep(500000); //500ms sleep, humans can't type at light speed
+        }
+        hunk = strtok(NULL, " "); //get next token
+    }
+}
 void *do_smth_periodically(void *data)
 {
   int fd1;
@@ -431,15 +581,14 @@ void *do_smth_periodically(void *data)
   for (;;) {
       // First open in read only and read
       fd1 = open(myfifo,O_RDONLY);
-      read(fd1, str1, 80);
+      read(fd1, str1, 128);
 
       // Print the read string and close
       printf("User1: %s\n", str1);
       close(fd1);
-      stdin_process(*str1);
 
-//        // Now open in write mode and write
-//        // string taken from user.
+      //send keystrokes given through named pipe
+      send_serialized_input(str1);
 
     usleep(interval);
   }
