@@ -57,14 +57,15 @@
 #include <sys/types.h>
 #include <unistd.h>
 #include "btstack.h"
+#include "shared.h"
 #include <pthread.h>
 
 #ifdef HAVE_BTSTACK_STDIN
 #include "btstack_stdin.h"
 #endif
 
-// to enable demo text on POSIX systems
-// #undef HAVE_BTSTACK_STDIN
+// to disable stdin keyboard input
+#undef HAVE_BTSTACK_STDIN
 
 // timing of keypresses
 #define TYPING_KEYDOWN_MS  20
@@ -198,10 +199,8 @@ static uint8_t                send_modifier;
 static uint8_t                send_keycode;
 static bool                   send_active;
 
-#ifdef HAVE_BTSTACK_STDIN
 static bd_addr_t device_addr;
-static const char * device_addr_string = "BC:EC:5D:E6:15:03";
-#endif
+
 char str[20];
 // Read device from File
 static char * get_target_device(){
@@ -362,8 +361,10 @@ static void stdin_process(char character){
             break;
         case APP_NOT_CONNECTED:
             printf("Connecting to %s...\n", bd_addr_to_str(device_addr));
-            device_addr_string = get_target_device();
-            sscanf_bd_addr(device_addr_string, device_addr);
+            if (target_bt_mac_str == NULL) {
+                target_bt_mac_str = get_target_device();
+            }
+            sscanf_bd_addr(target_bt_mac_str, device_addr);
             hid_device_connect(device_addr, &hid_cid);
             break;
         default:
@@ -371,32 +372,6 @@ static void stdin_process(char character){
             break;
     }
 }
-#else
-
-// On embedded systems, send constant demo text
-
-#define TYPING_DEMO_PERIOD_MS 100
-
-static const char * demo_text = "\n\nHello World!\n\nThis is the BTstack HID Keyboard Demo running on an Embedded Device.\n\n";
-static int demo_pos;
-static btstack_timer_source_t demo_text_timer;
-
-static void demo_text_timer_handler(btstack_timer_source_t * ts){
-    UNUSED(ts);
-
-    // queue character
-    uint8_t character = demo_text[demo_pos++];
-    if (demo_text[demo_pos] == 0){
-        demo_pos = 0;
-    }
-    queue_character(character);
-
-    // set timer for next character
-    btstack_run_loop_set_timer_handler(&demo_text_timer, demo_text_timer_handler);
-    btstack_run_loop_set_timer(&demo_text_timer, TYPING_DEMO_PERIOD_MS);
-    btstack_run_loop_add_timer(&demo_text_timer);
-}
-
 #endif
 
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * packet, uint16_t packet_size){
@@ -433,8 +408,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
 #ifdef HAVE_BTSTACK_STDIN
                             printf("HID Connected, please start typing...\n");
 #else
-                            printf("HID Connected, sending demo text...\n");
-                            demo_text_timer_handler(NULL);
+                            printf("HID Connected, accepting text from named pipe...\n");
 #endif
                             break;
                         case HID_SUBEVENT_CONNECTION_CLOSED:
@@ -571,10 +545,46 @@ static void send_serialized_input(char* input){
         hunk = strtok(NULL, " "); //get next token
     }
 }
+void *try_conn_periodically(void* data) {
+    bool attempt_conn_once = false;
+
+    while(true) {
+        switch (app_state){
+        case APP_BOOTING:
+        case APP_CONNECTING:
+            // ignore
+            break;
+        case APP_CONNECTED:
+            return;
+        case APP_NOT_CONNECTED:
+            if (attempt_conn_once) {
+                usleep(5000000); // 5 second cooldown before retry conn
+                printf("(retry) ");
+            }
+            target_bt_mac_str = get_target_device();
+            sscanf_bd_addr(target_bt_mac_str, device_addr);
+            printf("Connecting to %s...\n", bd_addr_to_str(device_addr));
+            hid_device_connect(device_addr, &hid_cid);
+            app_state = APP_CONNECTING;
+            attempt_conn_once = true;
+            break;
+        default:
+            btstack_assert(false);
+            break;
+        }
+        usleep(1000000); // 1 sec
+    }
+}
 void *do_smth_periodically(void *data)
 {
   int fd1;
-  char * myfifo = "/tmp/myfifo";
+  char myfifo[50];
+  char* suffix = "generic";
+  if (target_bt_mac_str != NULL) {
+    suffix = target_bt_mac_str;
+  }
+
+  snprintf(myfifo, 50, "/tmp/btstack-%s", suffix);
   mkfifo(myfifo, 0666);
   char str1[80], str2[80];
   int interval = *(int *)data;
@@ -677,13 +687,19 @@ int btstack_main(int argc, const char * argv[]){
     // register for HID events
     hid_device_register_packet_handler(&packet_handler);
 
+    sscanf_bd_addr(target_bt_mac_str, device_addr);
+    int interval = 1000000;
+
 #ifdef HAVE_BTSTACK_STDIN
-    sscanf_bd_addr(device_addr_string, device_addr);
     btstack_stdin_setup(stdin_process);
-    pthread_t thread;
-    int interval = 5000;
-    pthread_create(&thread, NULL, do_smth_periodically, &interval);
+#else
+    pthread_t conn_thread;
+    pthread_create(&conn_thread, NULL, try_conn_periodically, &interval);
+
 #endif
+
+    pthread_t thread;
+    pthread_create(&thread, NULL, do_smth_periodically, &interval);
 
     btstack_ring_buffer_init(&send_buffer, send_buffer_storage, sizeof(send_buffer_storage));
 

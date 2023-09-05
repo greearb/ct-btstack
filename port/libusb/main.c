@@ -75,6 +75,8 @@
 #include "hci_transport.h"
 #include "hci_transport_usb.h"
 
+#include "shared.h"
+
 #define USB_VENDOR_ID_REALTEK 0x0bda
 
 #define TLV_DB_PATH_PREFIX "/tmp/btstack_"
@@ -84,6 +86,7 @@ static bool tlv_reset;
 static const btstack_tlv_t * tlv_impl;
 static btstack_tlv_posix_t   tlv_context;
 static bd_addr_t             local_addr;
+char* target_bt_mac_str = NULL; //defined in shared.h
 
 int btstack_main(int argc, const char * argv[]);
 
@@ -234,13 +237,14 @@ void hal_led_toggle(void){
     printf("LED State %u\n", led_state);
 }
 
-static char short_options[] = "hu:l:r";
+static char short_options[] = "hu:d:l:r";
 
 static struct option long_options[] = {
     {"help",        no_argument,        NULL,   'h'},
     {"logfile",    required_argument,  NULL,   'l'},
     {"reset-tlv",    no_argument,       NULL,   'r'},
     {"usbpath",    required_argument,  NULL,   'u'},
+    {"target-dev",    required_argument,  NULL,   'd'},
     {0, 0, 0, 0}
 };
 
@@ -249,6 +253,7 @@ static char *help_options[] = {
     "set file to store debug output and HCI trace.",
     "reset bonding information stored in TLV.",
     "set USB path to Bluetooth Controller.",
+    "set MAC address of client device to connect with.",
 };
 
 static char *option_arg_name[] = {
@@ -256,6 +261,7 @@ static char *option_arg_name[] = {
     "LOGFILE",
     "",
     "USBPATH",
+    "TARGETDEV",
 };
 
 static void usage(const char *name){
@@ -285,6 +291,9 @@ int main(int argc, const char * argv[]){
             break;
         }
         switch (c) {
+            case 'd':
+                target_bt_mac_str = optarg;
+                break;
             case 'u':
                 usb_path_string = optarg;
                 break;
@@ -315,6 +324,10 @@ int main(int argc, const char * argv[]){
             usb_path_string = delimiter+1;
         }
         printf("\n");
+    }
+
+    if (target_bt_mac_str != NULL) {
+        printf("Client device to connect with: %s\n", target_bt_mac_str);
     }
 
 	/// GET STARTED with BTstack ///
