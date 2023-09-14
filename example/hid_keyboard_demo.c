@@ -509,6 +509,16 @@ static void send_serialized_input(char* input){
         else if (strcmp(hunk, "meta") == 0) {
             modifier |= 0x08; //'command' (meta key) modifier
         }
+        else if (strncmp(hunk, "sleep", 5) == 0) {
+            uint16_t sleep_sec = (uint16_t)strtoul((hunk+5), NULL, 10);
+            if (sleep_sec > 0) {
+                printf("Sleeping between keystrokes: %d seconds", sleep_sec);
+                usleep(sleep_sec * 1000000); //2 second sleep, humans can't type at light speed
+            }
+            else {
+                printf("Failed to parse sleep string %s\n", hunk);
+            }
+        }
         else {
             if (key_is_raw) { //looking for raw code #
                 int base = 10;
@@ -532,15 +542,16 @@ static void send_serialized_input(char* input){
         if (key_to_send) {
             if (modifier || key_is_raw) {
                 queue_character_and_mod(key_to_send, modifier, key_is_raw);
+                usleep(1000000); //1 sec sleep, assume more wait needed
             }
             else {
                 queue_character(key_to_send);
+                usleep(500000); //500ms sleep, humans can't type at light speed
             }
 
             modifier = 0x0; //reset modifier
             key_is_raw = false; //reset
             key_to_send = 0x0; //reset key
-            usleep(500000); //500ms sleep, humans can't type at light speed
         }
         hunk = strtok(NULL, " "); //get next token
     }
@@ -584,14 +595,14 @@ void *do_smth_periodically(void *data)
     suffix = target_bt_mac_str;
   }
 
-  snprintf(myfifo, 50, "/tmp/btstack-%s", suffix);
+  snprintf(myfifo, 256, "/tmp/btstack-%s", suffix);
   mkfifo(myfifo, 0666);
   char str1[80], str2[80];
   int interval = *(int *)data;
   for (;;) {
       // First open in read only and read
       fd1 = open(myfifo,O_RDONLY);
-      read(fd1, str1, 128);
+      read(fd1, str1, 256);
 
       // Print the read string and close
       printf("User1: %s\n", str1);
