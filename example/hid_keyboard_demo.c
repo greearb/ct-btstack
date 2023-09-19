@@ -557,7 +557,7 @@ static void send_serialized_input(char* input){
     }
 }
 void *try_conn_periodically(void* data) {
-    bool attempt_conn_once = false;
+    int attempt_conn_cnt = 0;
 
     while(true) {
         switch (app_state){
@@ -568,16 +568,19 @@ void *try_conn_periodically(void* data) {
         case APP_CONNECTED:
             return;
         case APP_NOT_CONNECTED:
-            if (attempt_conn_once) {
-                usleep(5000000); // 5 second cooldown before retry conn
-                printf("(retry) ");
+            if (attempt_conn_cnt == 2) {
+                //exit the program!!
+                printf("Unable to connect -- shutting down.\n");
+                hci_power_control(HCI_POWER_OFF);
+                exit(1);
             }
-            target_bt_mac_str = get_target_device();
-            sscanf_bd_addr(target_bt_mac_str, device_addr);
+            if (attempt_conn_cnt > 0) {
+                printf("(retry 1/1) ");
+            }
             printf("Connecting to %s...\n", bd_addr_to_str(device_addr));
             hid_device_connect(device_addr, &hid_cid);
             app_state = APP_CONNECTING;
-            attempt_conn_once = true;
+            attempt_conn_cnt++;
             break;
         default:
             btstack_assert(false);
