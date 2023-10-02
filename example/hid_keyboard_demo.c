@@ -598,21 +598,28 @@ void *do_smth_periodically(void *data)
     suffix = target_bt_mac_str;
   }
 
-  snprintf(myfifo, 256, "/tmp/btstack-%s", suffix);
+  snprintf(myfifo, 256, "/home/lanforge/btstack/btstack-%s", suffix);
   mkfifo(myfifo, 0666);
   char str1[80], str2[80];
   int interval = *(int *)data;
   for (;;) {
-      // First open in read only and read
-      fd1 = open(myfifo,O_RDONLY);
-      read(fd1, str1, 256);
+    //only read pipe while app is connected
+    if (app_state != APP_CONNECTED) {
+      usleep(interval);
+      continue;
+    }
 
-      // Print the read string and close
-      printf("User1: %s\n", str1);
-      close(fd1);
+    // First open in read only and read
+    fd1 = open(myfifo,O_RDONLY);
+    read(fd1, str1, 256);
+    fflush(stdout);
 
-      //send keystrokes given through named pipe
-      send_serialized_input(str1);
+    // Print the read string and close
+    printf("User1: %s\n", str1);
+    close(fd1);
+
+    //send keystrokes given through named pipe
+    send_serialized_input(str1);
 
     usleep(interval);
   }
@@ -634,7 +641,7 @@ int btstack_main(int argc, const char * argv[]){
     // Named Pipe Initialization
     int fd1;
 	// FIFO file path
-	char * myfifo = "/tmp/hidkey";
+	char * myfifo = "/home/lanforge/btstack/hidkey";
 	// Creating the named file(FIFO)
 	// mkfifo(<pathname>,<permission>)
 	mkfifo(myfifo, 0666);
