@@ -284,7 +284,7 @@ static void send_next_has_mod(btstack_timer_source_t * ts, bool key_is_raw) {
         }
         else if ((uint8_t)character_pld[0] <= 100) { //raw HID code
             send_keycode = (uint8_t)character_pld[0];
-            printf("Sending raw character w/ HID code: %d", character_pld[0]);
+            printf("Sending raw character w/ HID code: %d\n", character_pld[0]);
             found = true;
         }
 
@@ -445,6 +445,17 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
             break;
     }
 }
+static int getMultiplier(char* hunk, int keyword_len) {
+    char* asterisk_pos = strstr(hunk, "*");
+    if (asterisk_pos != NULL) {
+        uint16_t multiplier = (uint16_t)strtoul((asterisk_pos+1), NULL, 10);
+        if (multiplier > 0) {
+            printf("Sending this key x%u times\n", multiplier);
+            return multiplier;
+        }
+    }
+    return 1;
+}
 static void send_serialized_input(char* input){
     //remove newline at the end of str
     size_t len = strlen(input);
@@ -453,50 +464,54 @@ static void send_serialized_input(char* input){
     }
 
     char* hunk = strtok(input, " ");
+    int multiplier = 1;
     uint8_t modifier = 0x0;
     uint8_t key_to_send = 0x0;
     bool key_is_raw = false;
     while (hunk != NULL) {
         printf("Parsing hunk: '%s'\n", hunk);
 
-        if (strcmp(hunk, "enter") == 0) {
+        if (strncmp(hunk, "enter", strlen("enter")) == 0) {
             key_to_send = CHAR_RETURN;
         }
-        else if (strcmp(hunk, "esc") == 0) {
+        else if (strncmp(hunk, "esc", strlen("esc")) == 0) {
             key_to_send = CHAR_ESCAPE;
         }
-        else if (strcmp(hunk, "bs") == 0) {
+        else if (strncmp(hunk, "bs", strlen("bs")) == 0) {
             key_to_send = CHAR_BACKSPACE;
         }
-        else if (strcmp(hunk, "tab") == 0) {
+        else if (strncmp(hunk, "tab", strlen("tab")) == 0) {
             key_to_send = CHAR_TAB;
         }
-        else if (strcmp(hunk, "space") == 0) {
+        else if (strncmp(hunk, "space", strlen("space")) == 0) {
             key_to_send = ' ';
         }
-        else if (strcmp(hunk, "raw") == 0) {
+        else if (strncmp(hunk, "raw", strlen("raw")) == 0) {
             key_is_raw = true;
         }
-        else if (strcmp(hunk, "del") == 0) {
+        else if (strncmp(hunk, "del", strlen("del")) == 0) {
             key_is_raw = true;
             key_to_send = (char)0x4c;
         }
-        else if (strcmp(hunk, "rarrow") == 0) {
+        else if (strncmp(hunk, "rarrow", strlen("rarrow")) == 0) {
             key_is_raw = true;
             key_to_send = (char)0x4f;
         }
-        else if (strcmp(hunk, "larrow") == 0) {
+        else if (strncmp(hunk, "larrow", strlen("larrow")) == 0) {
             key_is_raw = true;
             key_to_send = (char)0x50;
         }
-        else if (strcmp(hunk, "dnarrow") == 0) {
+        else if (strncmp(hunk, "dnarrow", strlen("dnarrow")) == 0) {
             key_is_raw = true;
             key_to_send = (char)0x51;
+            multiplier = getMultiplier(hunk, strlen("dnarrow"));
         }
-        else if (strcmp(hunk, "uparrow") == 0) {
+        else if (strncmp(hunk, "uparrow", strlen("uparrow")) == 0) {
             key_is_raw = true;
             key_to_send = (char)0x52;
+            multiplier = getMultiplier(hunk, strlen("uparrow"));
         }
+        //modifier keys
         else if (strcmp(hunk, "ctrl") == 0) {
             modifier |= 0x01; //ctrl modifier
         }
@@ -540,15 +555,20 @@ static void send_serialized_input(char* input){
         }
 
         if (key_to_send) {
-            if (modifier || key_is_raw) {
-                queue_character_and_mod(key_to_send, modifier, key_is_raw);
-                usleep(1000000); //1 sec sleep, assume more wait needed
-            }
-            else {
-                queue_character(key_to_send);
-                usleep(500000); //500ms sleep, humans can't type at light speed
+            //check for multiplier i.e. send this key XX numer of times -'*XX'
+            int i = 0;
+            for(i; i < multiplier; i++) {
+                if (modifier || key_is_raw) {
+                    queue_character_and_mod(key_to_send, modifier, key_is_raw);
+                    usleep(1000000); //1 sec sleep, assume more wait needed
+                }
+                else {
+                    queue_character(key_to_send);
+                    usleep(250000); //250ms sleep, humans can't type at light speed
+                }
             }
 
+            multiplier = 1;
             modifier = 0x0; //reset modifier
             key_is_raw = false; //reset
             key_to_send = 0x0; //reset key
@@ -600,7 +620,7 @@ void *do_smth_periodically(void *data)
 
   snprintf(myfifo, 256, "/home/lanforge/btstack/btstack-%s", suffix);
   mkfifo(myfifo, 0666);
-  char str1[80], str2[80];
+  char str1[4096];
   int interval = *(int *)data;
   for (;;) {
     //only read pipe while app is connected
@@ -611,11 +631,11 @@ void *do_smth_periodically(void *data)
 
     // First open in read only and read
     fd1 = open(myfifo,O_RDONLY);
-    read(fd1, str1, 256);
+    read(fd1, str1, 4096);
     fflush(stdout);
 
     // Print the read string and close
-    printf("User1: %s\n", str1);
+    printf("\nUser1: %s\n", str1);
     close(fd1);
 
     //send keystrokes given through named pipe

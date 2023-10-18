@@ -79,7 +79,7 @@
 
 #define USB_VENDOR_ID_REALTEK 0x0bda
 
-#define TLV_DB_PATH_PREFIX "/tmp/btstack_"
+#define TLV_DB_PATH_PREFIX "/home/lanforge/btstack/btstack_"
 #define TLV_DB_PATH_POSTFIX ".tlv"
 static char tlv_db_path[100];
 static bool tlv_reset;
