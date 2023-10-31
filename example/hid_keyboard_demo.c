@@ -672,7 +672,7 @@ int btstack_main(int argc, const char * argv[]){
     // use Limited Discoverable Mode; Peripheral; Keyboard as CoD
     gap_set_class_of_device(0x2540);
     // set local name to be identified - zeroes will be replaced by actual BD ADDR
-    gap_set_local_name("HID Keyboard Demo 00:00:00:00:00:00");
+    gap_set_local_name("LANForge HID Keyboard 00:00:00:00:00:00");
     // allow for role switch in general and sniff mode
     gap_set_default_link_policy_settings( LM_LINK_POLICY_ENABLE_ROLE_SWITCH | LM_LINK_POLICY_ENABLE_SNIFF_MODE );
     // allow for role switch on outgoing connections - this allow HID Host to become master when we re-connect to it
