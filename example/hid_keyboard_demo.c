@@ -413,9 +413,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
                             break;
                         case HID_SUBEVENT_CONNECTION_CLOSED:
                             btstack_run_loop_remove_timer(&send_timer);
-                            printf("HID Disconnected\n");
-                            app_state = APP_NOT_CONNECTED;
-                            hid_cid = 0;
+                            //exit the program!!
+                            printf("HID Disconnected -- shutting down.\n");
+                            // app_state = APP_NOT_CONNECTED;
+                            // hid_cid = 0;
+                            hci_power_control(HCI_POWER_OFF);
+                            exit(1);
                             break;
                         case HID_SUBEVENT_CAN_SEND_NOW:
                             if (send_keycode){
