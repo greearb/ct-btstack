@@ -731,7 +731,9 @@ int btstack_main(int argc, const char * argv[]){
     // register for HID events
     hid_device_register_packet_handler(&packet_handler);
 
-    sscanf_bd_addr(target_bt_mac_str, device_addr);
+    if (target_bt_mac_str != NULL) {
+        sscanf_bd_addr(target_bt_mac_str, device_addr);
+    }
     int interval = 1000000;
 
 #ifdef HAVE_BTSTACK_STDIN

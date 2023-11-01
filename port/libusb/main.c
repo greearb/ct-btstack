@@ -43,6 +43,8 @@
 //
 // *****************************************************************************
 
+#include <sys/types.h>
+#include <sys/stat.h>
 #include <getopt.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -79,16 +81,18 @@
 
 #define USB_VENDOR_ID_REALTEK 0x0bda
 
-#define TLV_DB_PATH_PREFIX "/home/lanforge/btstack/btstack_"
+#define TLV_DB_PATH_PREFIX "/home/lanforge/btstack/tlv_keys"
 #define TLV_DB_PATH_POSTFIX ".tlv"
-static char tlv_db_path[100];
+static char tlv_db_path[200];
 static bool tlv_reset;
 static const btstack_tlv_t * tlv_impl;
 static btstack_tlv_posix_t   tlv_context;
 static bd_addr_t             local_addr;
+static bd_addr_t             targ_addr;
 char* target_bt_mac_str = NULL; //defined in shared.h
 
 int btstack_main(int argc, const char * argv[]);
+void gen_tlv_path(void);
 
 static bd_addr_t static_address;
 static int using_static_address;
@@ -121,6 +125,32 @@ static void local_version_information_handler(uint8_t * packet){
         default:
             break;
     }
+}
+
+void gen_tlv_path(void){
+    btstack_strcpy(tlv_db_path, sizeof(tlv_db_path), TLV_DB_PATH_PREFIX);
+
+    //ensure TLV keys directories exist
+    struct stat st = {0};
+    if (stat(tlv_db_path, &st) == -1) {
+        mkdir(tlv_db_path, 0700);
+    }
+
+    btstack_strcat(tlv_db_path, sizeof(tlv_db_path), "/ctrlr_");
+    btstack_strcat(tlv_db_path, sizeof(tlv_db_path), bd_addr_to_str_with_delimiter(local_addr, '-'));
+
+    if (stat(tlv_db_path, &st) == -1) {
+        mkdir(tlv_db_path, 0700);
+    }
+
+    btstack_strcat(tlv_db_path, sizeof(tlv_db_path), "/");
+    if (target_bt_mac_str != NULL) {
+        btstack_strcat(tlv_db_path, sizeof(tlv_db_path), bd_addr_to_str_with_delimiter(targ_addr, '-'));
+    }
+    else {
+        btstack_strcat(tlv_db_path, sizeof(tlv_db_path), "generic");
+    }
+    btstack_strcat(tlv_db_path, sizeof(tlv_db_path), TLV_DB_PATH_POSTFIX);
 }
 
 static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size){
@@ -164,9 +194,7 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
                     if (using_static_address){
                         memcpy(local_addr, static_address, 6);
                     }
-                    btstack_strcpy(tlv_db_path, sizeof(tlv_db_path), TLV_DB_PATH_PREFIX);
-                    btstack_strcat(tlv_db_path, sizeof(tlv_db_path), bd_addr_to_str_with_delimiter(local_addr, '-'));
-                    btstack_strcat(tlv_db_path, sizeof(tlv_db_path), TLV_DB_PATH_POSTFIX);
+                    gen_tlv_path();
                     printf("TLV path: %s", tlv_db_path);
                     if (tlv_reset){
                         int rc = unlink(tlv_db_path);
@@ -328,6 +356,7 @@ int main(int argc, const char * argv[]){
 
     if (target_bt_mac_str != NULL) {
         printf("Client device to connect with: %s\n", target_bt_mac_str);
+        sscanf_bd_addr(target_bt_mac_str, targ_addr);
     }
 
 	/// GET STARTED with BTstack ///
