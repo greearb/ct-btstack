@@ -59,6 +59,7 @@
 #include "btstack.h"
 #include "shared.h"
 #include <pthread.h>
+#include <errno.h>
 
 #ifdef HAVE_BTSTACK_STDIN
 #include "btstack_stdin.h"
@@ -614,38 +615,45 @@ void *try_conn_periodically(void* data) {
 }
 void *do_smth_periodically(void *data)
 {
-  int fd1;
-  char myfifo[50];
-  char* suffix = "generic";
-  if (target_bt_mac_str != NULL) {
-    suffix = target_bt_mac_str;
-  }
-
-  snprintf(myfifo, 256, "/home/lanforge/btstack/btstack-%s", suffix);
-  mkfifo(myfifo, 0666);
-  char str1[4096];
-  int interval = *(int *)data;
-  for (;;) {
-    //only read pipe while app is connected
-    if (app_state != APP_CONNECTED) {
-      usleep(interval);
-      continue;
+    int fd1;
+    int rv;
+    char myfifo[101];
+    myfifo[100] = '\0';
+    char* suffix = "generic";
+    if (target_bt_mac_str != NULL) {
+        suffix = target_bt_mac_str;
     }
 
-    // First open in read only and read
-    fd1 = open(myfifo,O_RDONLY);
-    read(fd1, str1, 4096);
-    fflush(stdout);
+    snprintf(myfifo, 100, "/home/lanforge/btstack/btstack-%s", suffix);
+    mkfifo(myfifo, 0666);
+    char str1[4096];
+    str1[4095] = '\0';
+    int interval = *(int *)data;
 
-    // Print the read string and close
-    printf("\nUser1: %s\n", str1);
-    close(fd1);
+    for (;;) {
+        // Open pipe
+        fd1 = open(myfifo, O_RDONLY);
+        if (fd1 >= 0) {
+            if (app_state == APP_CONNECTED) {
+                for (;;) {
+                    // Read from pipe
+                    rv = read(fd1, str1, 4095);
+                    if (rv < 0) {
+                        printf("\nNamed pipe read failed with error: %s\n", strerror(errno));
+                        break;
+                    }
 
-    //send keystrokes given through named pipe
-    send_serialized_input(str1);
+                    // Print the read string and close
+                    printf("\nKeystrokes: %s\n", str1);
 
-    usleep(interval);
-  }
+                    //send keystrokes
+                    send_serialized_input(str1);
+                }
+            }
+            close(fd1);
+        }
+        usleep(interval);
+    }
 }
 /* @section Main Application Setup
  *
