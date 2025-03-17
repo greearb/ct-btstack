@@ -216,7 +216,7 @@ static char * get_target_device(){
 		printf("%s", str);
 	}
 	fclose(ptr);
-	return &str;
+	return str;
 }
 static enum {
     APP_BOOTING,
@@ -449,8 +449,11 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
             break;
     }
 }
+
+/* TODO:  keyword_len is unused */
 static int getMultiplier(char* hunk, int keyword_len) {
     char* asterisk_pos = strstr(hunk, "*");
+
     if (asterisk_pos != NULL) {
         uint16_t multiplier = (uint16_t)strtoul((asterisk_pos+1), NULL, 10);
         if (multiplier > 0) {
@@ -580,7 +583,8 @@ static void send_serialized_input(char* input){
         hunk = strtok(NULL, " "); //get next token
     }
 }
-void *try_conn_periodically(void* data) {
+
+static void *try_conn_periodically(void* data) {
     int attempt_conn_cnt = 0;
 
     while(true) {
@@ -590,7 +594,7 @@ void *try_conn_periodically(void* data) {
             // ignore
             break;
         case APP_CONNECTED:
-            return;
+            return NULL;
         case APP_NOT_CONNECTED:
             if (attempt_conn_cnt == 2) {
                 //exit the program!!
@@ -612,8 +616,10 @@ void *try_conn_periodically(void* data) {
         }
         usleep(1000000); // 1 sec
     }
+    return NULL;
 }
-void *do_smth_periodically(void *data)
+
+static void *do_smth_periodically(void *data)
 {
     int fd1;
     int rv;
@@ -669,8 +675,6 @@ int btstack_main(int argc, const char * argv[]){
     (void)argc;
     (void)argv;
 
-    // Named Pipe Initialization
-    int fd1;
 	// FIFO file path
 	char * myfifo = "/home/lanforge/btstack/hidkey";
 	// Creating the named file(FIFO)
