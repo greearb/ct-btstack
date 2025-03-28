@@ -646,17 +646,19 @@ static void *do_smth_periodically(void *data)
                     rv = read(fd1, str1, 4095);
                     if (rv < 0) {
                         printf("\nNamed pipe read failed with error: %s\n", strerror(errno));
+                        close(fd1);
+                        fd1 = -1;
                         break;
                     }
-
-                    // Print the read string and close
-                    printf("\nKeystrokes: %s\n", str1);
-
-                    //send keystrokes
-                    send_serialized_input(str1);
+                    else if (rv > 0) { //if data was read, send it
+                        printf("\nKeystrokes: %s\n", str1);
+                        send_serialized_input(str1);
+                    }
                 }
             }
-            close(fd1);
+            else { // pause before checking again for device connection
+                usleep(interval);
+            }
         }
         usleep(interval);
     }
