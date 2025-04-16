@@ -225,6 +225,43 @@ static enum {
     APP_CONNECTED
 } app_state = APP_BOOTING;
 
+/* See: src/bluetooth.h // 'BLUETOOTH_ERROR_CODE' */
+/* Convert common error codes to their interpreted representations */
+static void toStringErrCode(char* buf, uint8_t err_code, int buf_len) {
+    if (err_code == 0x66) {
+        snprintf(buf, buf_len - 1, "0x%x: Authentication Refused", err_code);
+    }
+    else {
+        snprintf(buf, buf_len - 1, "0x%x", err_code);
+    }
+    buf[buf_len-1] = '\0';
+}
+
+/* Notify management entity of an event via writing to output-pipe */
+static void notifyEvent(char* message) {
+    if (events_file_path == NULL) {
+        return;
+    }
+
+    char buf[150];
+
+    int fd;
+    fd = open(events_file_path, O_WRONLY);
+    if (fd >= 0) {
+        snprintf(buf, 149, "admin btstack_event '[ctrlr_path %s // target %s ]' '%s' \n", usb_path_str, target_bt_mac_str, message);
+        buf[149] = '\0';
+
+        int rv = write(fd, buf, strlen(buf));
+        if (rv < 0) {
+            printf("ERROR: Writing to LANforge pipe helper failed\n");
+        }
+        close(fd);
+    }
+    else {
+        printf("ERROR: notifyEvent: Opening LANforge pipe helper failed\n");
+    }
+}
+
 // HID Keyboard lookup
 static bool lookup_keycode(uint8_t character, const uint8_t * table, int size, uint8_t * keycode){
     int i;
@@ -399,11 +436,19 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
                             status = hid_subevent_connection_opened_get_status(packet);
                             if (status != ERROR_CODE_SUCCESS) {
                                 // outgoing connection failed
-                                printf("Connection failed, status 0x%x\n", status);
+                                char msg[100];
+                                char status_readable[50];
+                                toStringErrCode(status_readable, status, 50);
+                                snprintf(msg, 100, "Connection failed, err: %s", status_readable);
+                                printf("%s\n", msg);
+                                notifyEvent(msg);
+
                                 app_state = APP_NOT_CONNECTED;
                                 hid_cid = 0;
                                 return;
                             }
+
+                            notifyEvent("Connection Success!");
                             app_state = APP_CONNECTED;
                             hid_cid = hid_subevent_connection_opened_get_hid_cid(packet);
 #ifdef HAVE_BTSTACK_STDIN

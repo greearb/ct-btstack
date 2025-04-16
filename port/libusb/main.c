@@ -89,7 +89,11 @@ static const btstack_tlv_t * tlv_impl;
 static btstack_tlv_posix_t   tlv_context;
 static bd_addr_t             local_addr;
 static bd_addr_t             targ_addr;
-char* target_bt_mac_str = NULL; //defined in shared.h
+
+/* defined in shared.h */
+char* target_bt_mac_str = NULL;
+char* usb_path_str = NULL;
+char* events_file_path = NULL;
 
 int btstack_main(int argc, const char * argv[]);
 void gen_tlv_path(void);
@@ -265,19 +269,21 @@ void hal_led_toggle(void){
     printf("LED State %u\n", led_state);
 }
 
-static char short_options[] = "hu:d:l:r";
+static char short_options[] = "hu:e:d:l:r";
 
 static struct option long_options[] = {
-    {"help",        no_argument,        NULL,   'h'},
-    {"logfile",    required_argument,  NULL,   'l'},
-    {"reset-tlv",    no_argument,       NULL,   'r'},
-    {"usbpath",    required_argument,  NULL,   'u'},
-    {"target-dev",    required_argument,  NULL,   'd'},
+    {"help",         no_argument,        NULL,   'h'},
+    {"events-file",  required_argument,  NULL,   'e'},
+    {"logfile",      required_argument,  NULL,   'l'},
+    {"reset-tlv",    no_argument,        NULL,   'r'},
+    {"usbpath",      required_argument,  NULL,   'u'},
+    {"target-dev",   required_argument,  NULL,   'd'},
     {0, 0, 0, 0}
 };
 
 static char *help_options[] = {
     "print (this) help.",
+    "set file to send event notifications to.",
     "set file to store debug output and HCI trace.",
     "reset bonding information stored in TLV.",
     "set USB path to Bluetooth Controller.",
@@ -286,6 +292,7 @@ static char *help_options[] = {
 
 static char *option_arg_name[] = {
     "",
+    "EVENTSFILE",
     "LOGFILE",
     "",
     "USBPATH",
@@ -297,7 +304,7 @@ static void usage(const char *name){
     printf( "usage:\n\t%s [options]\n", name );
     printf("valid options:\n");
     for( i=0; long_options[i].name != 0; i++) {
-        printf("--%-10s| -%c  %-10s\t\t%s\n", long_options[i].name, long_options[i].val, option_arg_name[i], help_options[i] );
+        printf("--%-12s| -%c  %-10s\t\t%s\n", long_options[i].name, long_options[i].val, option_arg_name[i], help_options[i] );
     }
 }
 
@@ -306,7 +313,6 @@ int main(int argc, const char * argv[]){
 
     uint8_t usb_path[USB_MAX_PATH_LEN];
     int usb_path_len = 0;
-    const char * usb_path_string = NULL;
     const char * log_file_path = NULL;
 
     // parse command line parameters
@@ -322,8 +328,11 @@ int main(int argc, const char * argv[]){
             case 'd':
                 target_bt_mac_str = optarg;
                 break;
+            case 'e':
+                events_file_path = optarg;
+                break;
             case 'u':
-                usb_path_string = optarg;
+                usb_path_str = optarg;
                 break;
             case 'l':
                 log_file_path = optarg;
@@ -338,18 +347,18 @@ int main(int argc, const char * argv[]){
         }
     }
 
-    if (usb_path_string != NULL){
+    if (usb_path_str != NULL){
         // parse command line options for "-u 11:22:33"
         printf("Specified USB Path: ");
         while (1){
             char * delimiter;
-            int port = strtol(usb_path_string, &delimiter, 16);
+            int port = strtol(usb_path_str, &delimiter, 16);
             usb_path[usb_path_len] = port;
             usb_path_len++;
             printf("%02x ", port);
             if (!delimiter) break;
             if (*delimiter != ':' && *delimiter != '-') break;
-            usb_path_string = delimiter+1;
+            usb_path_str = delimiter+1;
         }
         printf("\n");
     }
@@ -357,6 +366,10 @@ int main(int argc, const char * argv[]){
     if (target_bt_mac_str != NULL) {
         printf("Client device to connect with: %s\n", target_bt_mac_str);
         sscanf_bd_addr(target_bt_mac_str, targ_addr);
+    }
+
+    if (events_file_path != NULL) {
+        printf("File for writing event output: %s\n", events_file_path);
     }
 
 	/// GET STARTED with BTstack ///
@@ -373,7 +386,7 @@ int main(int argc, const char * argv[]){
         btstack_strcpy(pklg_path, sizeof(pklg_path),  "/tmp/hci_dump");
         if (usb_path_len){
             btstack_strcat(pklg_path, sizeof(pklg_path),  "_");
-            btstack_strcat(pklg_path, sizeof(pklg_path),  usb_path_string);
+            btstack_strcat(pklg_path, sizeof(pklg_path),  usb_path_str);
         }
         btstack_strcat(pklg_path, sizeof(pklg_path), ".pklg");
         log_file_path = pklg_path;
