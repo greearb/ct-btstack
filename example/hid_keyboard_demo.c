@@ -47,6 +47,7 @@
 // *****************************************************************************
 
 
+#define _GNU_SOURCE
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -248,7 +249,7 @@ static void notifyEvent(char* message) {
     int fd;
     fd = open(events_file_path, O_WRONLY);
     if (fd >= 0) {
-        snprintf(buf, 149, "admin btstack_event '[ctrlr_path %s // target %s ]' '%s' \n", usb_path_str, target_bt_mac_str, message);
+        snprintf(buf, 149, "admin btstack_event %s %s\n", target_bt_mac_str, message);
         buf[149] = '\0';
 
         int rv = write(fd, buf, strlen(buf));
@@ -260,6 +261,48 @@ static void notifyEvent(char* message) {
     else {
         printf("ERROR: notifyEvent: Opening LANforge pipe helper failed\n");
     }
+}
+
+void setAppState(uint8_t new_state, uint8_t opt_err_code) {
+    if (new_state == app_state) {
+        return;
+    }
+    uint8_t prev_state = app_state;
+    app_state = new_state;
+
+    // @TODO is it worth hardcoding str representations for known error codes?
+    if (opt_err_code != 0) {
+        // @UNUSED**
+        // char status_readable[50];
+        // toStringErrCode(status_readable, status, 50);
+    }
+
+    char state_msg[50];
+    state_msg[49] = '\0';
+    if (prev_state == APP_CONNECTED && app_state == APP_NOT_CONNECTED) {
+        snprintf(state_msg, sizeof(state_msg), "disconnected REASON: %d\n", opt_err_code);
+    }
+    else if (prev_state == APP_CONNECTING && app_state == APP_NOT_CONNECTED) {
+        if (opt_err_code == L2CAP_CONNECTION_BASEBAND_DISCONNECT) { //@TODO is this right??
+            snprintf(state_msg, sizeof(state_msg), "connection_fail_timeout\n");
+        }
+        else {
+            snprintf(state_msg, sizeof(state_msg), "connection_fail\n");
+            //@DEBUG
+            // printf("connection_failing REASON: %d\n", opt_err_code);
+        }
+    }
+    else if (app_state == APP_CONNECTING) {
+        snprintf(state_msg, sizeof(state_msg), "connecting\n");
+    }
+    else if (app_state == APP_CONNECTED) {
+        snprintf(state_msg, sizeof(state_msg), "connected\n");
+    }
+    else {
+        return;
+    }
+    state_msg[49] = '\0';
+    notifyEvent(state_msg);
 }
 
 // HID Keyboard lookup
@@ -421,7 +464,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
             switch (hci_event_packet_get_type(packet)){
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
-                    app_state = APP_NOT_CONNECTED;
+                    setAppState(APP_NOT_CONNECTED, 0);
                     break;
 
                 case HCI_EVENT_USER_CONFIRMATION_REQUEST:
@@ -436,20 +479,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
                             status = hid_subevent_connection_opened_get_status(packet);
                             if (status != ERROR_CODE_SUCCESS) {
                                 // outgoing connection failed
-                                char msg[100];
-                                char status_readable[50];
-                                toStringErrCode(status_readable, status, 50);
-                                snprintf(msg, 100, "Connection failed, err: %s", status_readable);
-                                printf("%s\n", msg);
-                                notifyEvent(msg);
-
-                                app_state = APP_NOT_CONNECTED;
+                                setAppState(APP_NOT_CONNECTED, status);
                                 hid_cid = 0;
                                 return;
                             }
 
-                            notifyEvent("Connection Success!");
-                            app_state = APP_CONNECTED;
+                            setAppState(APP_CONNECTED, status);
                             hid_cid = hid_subevent_connection_opened_get_hid_cid(packet);
 #ifdef HAVE_BTSTACK_STDIN
                             printf("HID Connected, please start typing...\n");
@@ -461,7 +496,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
                             btstack_run_loop_remove_timer(&send_timer);
                             //exit the program!!
                             printf("HID Disconnected -- shutting down.\n");
-                            // app_state = APP_NOT_CONNECTED;
+                            setAppState(APP_NOT_CONNECTED, 0); //@TODO encode that connection was closed???
                             // hid_cid = 0;
                             hci_power_control(HCI_POWER_OFF);
                             exit(1);
@@ -652,7 +687,7 @@ static void *try_conn_periodically(void* data) {
             }
             printf("Connecting to %s...\n", bd_addr_to_str(device_addr));
             hid_device_connect(device_addr, &hid_cid);
-            app_state = APP_CONNECTING;
+            setAppState(APP_CONNECTING, 0);
             attempt_conn_cnt++;
             break;
         default:
@@ -809,7 +844,14 @@ int btstack_main(int argc, const char * argv[]){
     btstack_ring_buffer_init(&send_buffer, send_buffer_storage, sizeof(send_buffer_storage));
 
     // turn on!
-    hci_power_control(HCI_POWER_ON);
+    int rv = hci_power_control(HCI_POWER_ON);
+    if (rv != 0) {
+        hci_power_control(HCI_POWER_OFF);
+        char* curr_state = "misconfigured";
+        notifyEvent(curr_state);
+        exit(2);
+    }
+
     return 0;
 }
 /* LISTING_END */
