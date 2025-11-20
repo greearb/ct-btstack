@@ -84,6 +84,7 @@
 #define TLV_DB_PATH_PREFIX "/home/lanforge/btstack/tlv_keys"
 #define TLV_DB_PATH_POSTFIX ".tlv"
 static char tlv_db_path[200];
+static char tlv_local_addr[32];
 static bool tlv_reset;
 static const btstack_tlv_t * tlv_impl;
 static btstack_tlv_posix_t   tlv_context;
@@ -139,12 +140,18 @@ void gen_tlv_path(void){
     if (stat(tlv_db_path, &st) == -1) {
         mkdir(tlv_db_path, 0700);
     }
+    btstack_strcat(tlv_local_addr, sizeof(tlv_local_addr), bd_addr_to_str_with_delimiter(local_addr, ':'));
 
     btstack_strcat(tlv_db_path, sizeof(tlv_db_path), "/ctrlr_");
     btstack_strcat(tlv_db_path, sizeof(tlv_db_path), bd_addr_to_str_with_delimiter(local_addr, '-'));
 
     if (stat(tlv_db_path, &st) == -1) {
         mkdir(tlv_db_path, 0700);
+
+        extern void notifyEvent(const char *event);
+        char event_msg[256];
+        snprintf(event_msg, sizeof(event_msg), "tlv_path_created %s", tlv_local_addr);
+        notifyEvent(event_msg);
     }
 
     btstack_strcat(tlv_db_path, sizeof(tlv_db_path), "/");
@@ -217,6 +224,10 @@ static void packet_handler (uint8_t packet_type, uint16_t channel, uint8_t *pack
 #ifdef ENABLE_BLE
                     le_device_db_tlv_configure(tlv_impl, &tlv_context);
 #endif
+                    extern void notifyEvent(const char *event);
+                    char event_msg[256];
+                    snprintf(event_msg, sizeof(event_msg), "btstack_running %s", tlv_local_addr);
+                    notifyEvent(event_msg);
                     printf("BTstack up and running on %s.\n", bd_addr_to_str(local_addr));
                     break;
                 case HCI_STATE_OFF:

@@ -239,7 +239,7 @@ static void toStringErrCode(char* buf, uint8_t err_code, int buf_len) {
 }
 
 /* Notify management entity of an event via writing to output-pipe */
-static void notifyEvent(char* message) {
+void notifyEvent(char* message) {
     if (events_file_path == NULL) {
         return;
     }
