@@ -598,6 +598,10 @@ static void send_serialized_input(char* input){
             key_to_send = (char)0x52;
             multiplier = getMultiplier(hunk, strlen("uparrow"));
         }
+        else if (strncmp(hunk, "reconnect", strlen("reconnect")) == 0) {
+            printf("Told to reconnect...\n");
+            hci_power_control(HCI_POWER_OFF); // trigger reconnect attempt
+        }
         //modifier keys
         else if (strcmp(hunk, "ctrl") == 0) {
             modifier |= 0x01; //ctrl modifier
