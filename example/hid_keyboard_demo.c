@@ -61,6 +61,7 @@
 #include "shared.h"
 #include <pthread.h>
 #include <errno.h>
+#include <stdatomic.h>
 
 #ifdef HAVE_BTSTACK_STDIN
 #include "btstack_stdin.h"
@@ -200,6 +201,7 @@ static btstack_timer_source_t send_timer;
 static uint8_t                send_modifier;
 static uint8_t                send_keycode;
 static bool                   send_active;
+atomic_bool connection_paused = false;
 
 static bd_addr_t device_addr;
 
@@ -223,7 +225,8 @@ static enum {
     APP_BOOTING,
     APP_NOT_CONNECTED,
     APP_CONNECTING,
-    APP_CONNECTED
+    APP_CONNECTED,
+    APP_PAUSED
 } app_state = APP_BOOTING;
 
 /* See: src/bluetooth.h // 'BLUETOOTH_ERROR_CODE' */
@@ -461,6 +464,12 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
     uint8_t status;
     switch (packet_type){
         case HCI_EVENT_PACKET:
+
+            if(atomic_load_explicit(&connection_paused, memory_order_acquire)) {
+                // ignore all events while paused
+                return;
+            }
+
             switch (hci_event_packet_get_type(packet)){
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
@@ -543,6 +552,9 @@ static int getMultiplier(char* hunk, int keyword_len) {
     }
     return 1;
 }
+
+static void *try_conn_periodically(void* data);
+
 static void send_serialized_input(char* input){
     //remove newline at the end of str
     size_t len = strlen(input);
@@ -601,6 +613,20 @@ static void send_serialized_input(char* input){
         else if (strncmp(hunk, "reconnect", strlen("reconnect")) == 0) {
             printf("Told to reconnect...\n");
             hci_power_control(HCI_POWER_OFF); // trigger reconnect attempt
+        }
+        else if (strncmp(hunk, "pause", strlen("pause")) == 0) {
+            notifyEvent("paused");
+            atomic_store_explicit(&connection_paused, true, memory_order_release);
+            hci_power_control(HCI_POWER_OFF);
+        }
+        else if (strncmp(hunk, "resume", strlen("resume")) == 0) {
+            notifyEvent("resumed");
+            atomic_store_explicit(&connection_paused, false, memory_order_release);
+            hci_power_control(HCI_POWER_ON);
+            setAppState(APP_NOT_CONNECTED, 0);
+            int interval = 1000000; // 1 second
+            pthread_t conn_thread;
+            pthread_create(&conn_thread, NULL, try_conn_periodically, &interval);
         }
         //modifier keys
         else if (strcmp(hunk, "ctrl") == 0) {
@@ -677,6 +703,8 @@ static void *try_conn_periodically(void* data) {
         case APP_CONNECTING:
             // ignore
             break;
+        case APP_PAUSED:
+            return NULL;
         case APP_CONNECTED:
             return NULL;
         case APP_NOT_CONNECTED:
