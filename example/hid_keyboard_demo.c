@@ -554,6 +554,7 @@ static int getMultiplier(char* hunk, int keyword_len) {
 }
 
 static void *try_conn_periodically(void* data);
+extern void del_tlv_path(void);
 
 static void send_serialized_input(char* input){
     //remove newline at the end of str
@@ -627,6 +628,9 @@ static void send_serialized_input(char* input){
             int interval = 1000000; // 1 second
             pthread_t conn_thread;
             pthread_create(&conn_thread, NULL, try_conn_periodically, &interval);
+        } else if (strncmp(hunk, "rmkey", strlen("rmkey")) == 0) {
+            notifyEvent("rmkey");
+            del_tlv_path();
         }
         //modifier keys
         else if (strcmp(hunk, "ctrl") == 0) {
@@ -709,10 +713,11 @@ static void *try_conn_periodically(void* data) {
             return NULL;
         case APP_NOT_CONNECTED:
             if (attempt_conn_cnt == 2) {
-                //exit the program!!
                 printf("Unable to connect -- shutting down.\n");
                 hci_power_control(HCI_POWER_OFF);
-                exit(1);
+                del_tlv_path(); // remove stored keys on failure to connect
+                setAppState(APP_PAUSED, 0); // pause state until user resumes with adjustments
+                return NULL;
             }
             if (attempt_conn_cnt > 0) {
                 printf("(retry 1/1) ");
@@ -881,7 +886,7 @@ int btstack_main(int argc, const char * argv[]){
         hci_power_control(HCI_POWER_OFF);
         char* curr_state = "misconfigured";
         notifyEvent(curr_state);
-        exit(2);
+        return 1;
     }
 
     return 0;

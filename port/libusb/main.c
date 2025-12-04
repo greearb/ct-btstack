@@ -52,6 +52,7 @@
 #include <string.h>
 #include <signal.h>
 #include <unistd.h>
+#include <dirent.h>
 #include <hci_dump_posix_stdout.h>
 
 #include "btstack_config.h"
@@ -84,6 +85,7 @@
 #define TLV_DB_PATH_PREFIX "/home/lanforge/btstack/tlv_keys"
 #define TLV_DB_PATH_POSTFIX ".tlv"
 static char tlv_db_path[200];
+static char tlv_db_ctrlr_dir_path[200];
 static char tlv_local_addr[32];
 static bool tlv_reset;
 static const btstack_tlv_t * tlv_impl;
@@ -98,6 +100,7 @@ char* events_file_path = NULL;
 
 int btstack_main(int argc, const char * argv[]);
 void gen_tlv_path(void);
+void del_tlv_path(void);
 
 static bd_addr_t static_address;
 static int using_static_address;
@@ -129,6 +132,39 @@ static void local_version_information_handler(uint8_t * packet){
             break;
         default:
             break;
+    }
+}
+
+void empty_directory(const char *path) {
+    DIR *dir = opendir(path);
+    if (!dir) return;
+    struct dirent *entry;
+    char filepath[512];
+
+    while ((entry = readdir(dir)) != NULL) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+
+        snprintf(filepath, sizeof(filepath), "%s/%s", path, entry->d_name);
+        unlink(filepath);
+    }
+    closedir(dir);
+}
+
+void del_tlv_path(void){
+    extern void notifyEvent(const char *event);
+    btstack_strcpy(tlv_db_ctrlr_dir_path, sizeof(tlv_db_ctrlr_dir_path), TLV_DB_PATH_PREFIX);
+    btstack_strcat(tlv_db_ctrlr_dir_path, sizeof(tlv_db_ctrlr_dir_path), "/ctrlr_");
+    btstack_strcat(tlv_db_ctrlr_dir_path, sizeof(tlv_db_ctrlr_dir_path), bd_addr_to_str_with_delimiter(local_addr, '-'));
+
+    struct stat st = {0};
+    if (stat(tlv_db_ctrlr_dir_path, &st) != -1) {
+        empty_directory(tlv_db_ctrlr_dir_path);
+        rmdir(tlv_db_ctrlr_dir_path);
+        char event_msg[256];
+        snprintf(event_msg, sizeof(event_msg), "tlv_path_deleted %s", tlv_local_addr);
+        notifyEvent(event_msg);
     }
 }
 
