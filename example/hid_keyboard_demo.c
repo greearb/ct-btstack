@@ -712,7 +712,7 @@ static void *try_conn_periodically(void* data) {
         case APP_CONNECTED:
             return NULL;
         case APP_NOT_CONNECTED:
-            if (attempt_conn_cnt == 2) {
+            if (attempt_conn_cnt == 3) {
                 printf("Unable to connect -- shutting down.\n");
                 hci_power_control(HCI_POWER_OFF);
                 del_tlv_path(); // remove stored keys on failure to connect
@@ -720,7 +720,7 @@ static void *try_conn_periodically(void* data) {
                 return NULL;
             }
             if (attempt_conn_cnt > 0) {
-                printf("(retry 1/1) ");
+                printf("(retry %d/3) ", attempt_conn_cnt);
             }
             printf("Connecting to %s...\n", bd_addr_to_str(device_addr));
             hid_device_connect(device_addr, &hid_cid);
