@@ -458,22 +458,26 @@ static void stdin_process(char character){
 }
 #endif
 
+static void *try_conn_periodically(void* data);
+
+static void start_conn_thread(void) {
+    static int interval = 1000000;
+    pthread_t conn_thread;
+    pthread_create(&conn_thread, NULL, try_conn_periodically, &interval);
+    pthread_detach(conn_thread);
+}
+
 static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * packet, uint16_t packet_size){
     UNUSED(channel);
     UNUSED(packet_size);
     uint8_t status;
     switch (packet_type){
         case HCI_EVENT_PACKET:
-
-            if(atomic_load_explicit(&connection_paused, memory_order_acquire)) {
-                // ignore all events while paused
-                return;
-            }
-
             switch (hci_event_packet_get_type(packet)){
                 case BTSTACK_EVENT_STATE:
                     if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) return;
                     setAppState(APP_NOT_CONNECTED, 0);
+                    start_conn_thread();
                     break;
 
                 case HCI_EVENT_USER_CONFIRMATION_REQUEST:
@@ -503,7 +507,13 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
                             break;
                         case HID_SUBEVENT_CONNECTION_CLOSED:
                             btstack_run_loop_remove_timer(&send_timer);
-                            //exit the program!!
+                            hid_cid = 0;
+                            if (atomic_load_explicit(&connection_paused, memory_order_acquire)) {
+                                // Intentional disconnect due to pause - update state without exiting
+                                printf("HID Disconnected (paused).\n");
+                                app_state = APP_PAUSED;
+                                return;
+                            }
                             printf("HID Disconnected -- shutting down.\n");
                             setAppState(APP_NOT_CONNECTED, 0); //@TODO encode that connection was closed???
                             // hid_cid = 0;
@@ -553,7 +563,6 @@ static int getMultiplier(char* hunk, int keyword_len) {
     return 1;
 }
 
-static void *try_conn_periodically(void* data);
 extern void del_tlv_path(void);
 
 static void send_serialized_input(char* input){
@@ -624,10 +633,6 @@ static void send_serialized_input(char* input){
             notifyEvent("resumed");
             atomic_store_explicit(&connection_paused, false, memory_order_release);
             hci_power_control(HCI_POWER_ON);
-            setAppState(APP_NOT_CONNECTED, 0);
-            int interval = 1000000; // 1 second
-            pthread_t conn_thread;
-            pthread_create(&conn_thread, NULL, try_conn_periodically, &interval);
         } else if (strncmp(hunk, "rmkey", strlen("rmkey")) == 0) {
             notifyEvent("rmkey");
             del_tlv_path();
@@ -869,10 +874,6 @@ int btstack_main(int argc, const char * argv[]){
 
 #ifdef HAVE_BTSTACK_STDIN
     btstack_stdin_setup(stdin_process);
-#else
-    pthread_t conn_thread;
-    pthread_create(&conn_thread, NULL, try_conn_periodically, &interval);
-
 #endif
 
     pthread_t thread;
