@@ -5469,9 +5469,11 @@ static int hci_power_control_state_working(HCI_POWER_MODE power_mode) {
             // do nothing
             break;
         case HCI_POWER_OFF:
+            log_info("hci_power_control_state_working is entering halting state");
             hci_power_enter_halting_state();
             break;
         case HCI_POWER_SLEEP:
+            log_info("hci_power_control_state_working is toggling sleep + disconnect!");
             // see hci_run
             hci_stack->state = HCI_STATE_FALLING_ASLEEP;
             hci_stack->substate = HCI_FALLING_ASLEEP_DISCONNECT;
@@ -5543,26 +5545,32 @@ static int hci_power_control_state_sleeping(HCI_POWER_MODE power_mode) {
 }
 
 int hci_power_control(HCI_POWER_MODE power_mode){
-    log_info("hci_power_control: %d, current mode %u", power_mode, hci_stack->state);
+    log_info("hci_power_control new mode: %d, current mode %u", power_mode, hci_stack->state);
     btstack_run_loop_remove_timer(&hci_stack->timeout);
     int err = 0;
     switch (hci_stack->state){
         case HCI_STATE_OFF:
+            log_info("hci_power_control stack state is off");
             err = hci_power_control_state_off(power_mode);
             break;
         case HCI_STATE_INITIALIZING:
+            log_info("hci_power_control stack state is initializing");
             err = hci_power_control_state_initializing(power_mode);
             break;
         case HCI_STATE_WORKING:
+            log_info("hci_power_control stack state is working");
             err = hci_power_control_state_working(power_mode);
             break;
         case HCI_STATE_HALTING:
+            log_info("hci_power_control stack state is halting");
             err = hci_power_control_state_halting(power_mode);
             break;
         case HCI_STATE_FALLING_ASLEEP:
+            log_info("hci_power_control stack state is falling asleep");
             err = hci_power_control_state_falling_asleep(power_mode);
             break;
         case HCI_STATE_SLEEPING:
+            log_info("hci_power_control stack state is sleeping");
             err = hci_power_control_state_sleeping(power_mode);
             break;
         default:

@@ -506,6 +506,7 @@ static void packet_handler(uint8_t packet_type, uint16_t channel, uint8_t * pack
 #endif
                             break;
                         case HID_SUBEVENT_CONNECTION_CLOSED:
+                            log_info("packet handler got HID_SUBEVENT_CONNECTION_CLOSED!");
                             btstack_run_loop_remove_timer(&send_timer);
                             hid_cid = 0;
                             if (atomic_load_explicit(&connection_paused, memory_order_acquire)) {
@@ -621,17 +622,19 @@ static void send_serialized_input(char* input){
             multiplier = getMultiplier(hunk, strlen("uparrow"));
         }
         else if (strncmp(hunk, "reconnect", strlen("reconnect")) == 0) {
-            printf("Told to reconnect...\n");
+            log_info("Told to reconnect! calling hci_power_control(HCI_POWER_OFF)");
             hci_power_control(HCI_POWER_OFF); // trigger reconnect attempt
         }
         else if (strncmp(hunk, "pause", strlen("pause")) == 0) {
             notifyEvent("paused");
             atomic_store_explicit(&connection_paused, true, memory_order_release);
+            log_info("pausing connection! calling hci_power_control(HCI_POWER_OFF)");
             hci_power_control(HCI_POWER_OFF);
         }
         else if (strncmp(hunk, "resume", strlen("resume")) == 0) {
             notifyEvent("resumed");
             atomic_store_explicit(&connection_paused, false, memory_order_release);
+            log_info("resuming connection! calling hci_power_control(HCI_POWER_ON)");
             hci_power_control(HCI_POWER_ON);
         } else if (strncmp(hunk, "rmkey", strlen("rmkey")) == 0) {
             notifyEvent("rmkey");
