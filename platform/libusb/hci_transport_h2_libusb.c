@@ -1316,8 +1316,39 @@ static int usb_close(void) {
 
             // finally release interface
             libusb_release_interface(handle, 0);
+            log_info("libusb released interface 0\n");
 #ifdef ENABLE_SCO_OVER_HCI
             libusb_release_interface(handle, 1);
+            log_info("libusb released interface 1\n");
+#endif
+
+#if !defined(__APPLE__) && !defined(_WIN32) && !defined(__CYGWIN__) && !defined(__FreeBSD__)
+            // attach kernel driver after relesing interfaces
+            if (libusb_kernel_driver_active(handle, 0) == 0) {
+               int attach_rv = libusb_attach_kernel_driver(handle, 0);
+               switch (attach_rv) {
+                  case 0:
+                     log_info("Successfully reattached kernel driver!");
+                     break;
+                  case LIBUSB_ERROR_NOT_FOUND:
+                     log_info("libusb attach no kernel driver active!");
+                     break;
+                  case LIBUSB_ERROR_INVALID_PARAM:
+                     log_info("libusb attach interface does not exist!");
+                     break;
+                  case LIBUSB_ERROR_NO_DEVICE:
+                     log_info("libusb attach device has been disconnected!");
+                     break;
+                  case LIBUSB_ERROR_NOT_SUPPORTED:
+                     log_info("libusb attach platform doesn't support driver attach!");
+                     break;
+                  case LIBUSB_ERROR_BUSY:
+                     log_info("libusb attach interface is already claimed!");
+                     break;
+                  default:
+                     log_info("libusb attach some other libusb error!");
+               }
+            }
 #endif
             log_info("Libusb shutdown complete");
 
