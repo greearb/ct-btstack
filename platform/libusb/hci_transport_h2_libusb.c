@@ -54,6 +54,7 @@
 // SCO Data     0 0 0x03 Isochronous (Out)
 
 #include <strings.h>
+#include <stdio.h>
 #include <string.h>
 #include <unistd.h>   /* UNIX standard function definitions */
 #include <sys/types.h>
@@ -420,6 +421,83 @@ void hci_transport_usb_set_path(int len, uint8_t * port_numbers){
     usb_path_len = len;
     memcpy(usb_path, port_numbers, len);
 }
+
+void hci_transport_controller_set_mac(bd_addr_t target_ctrl_mac, bool filter_by_mac) {
+   memcpy(controller_mac, target_ctrl_mac, BD_ADDR_LEN);
+   mac_filtering_on = filter_by_mac;
+}
+
+// Build a string file path to /sys/bus/usb/devices/<bus>-<port>/serial
+// to grab a USB Bluetooth device's serial number
+int build_sysfs_path(char * buf, libusb_device * device, int buf_len) {
+   if (buf == NULL) {
+      log_error("build_sysfs_path: Cannot build file path with a NULL buffer");
+      return -1;
+   }
+   if (device == NULL) {
+      log_error("build_sysfs_path: Cannot get bus and port numbers with a NULL device");
+      return -1;
+   }
+   int count = 0;
+   int rv = 0;
+   uint8_t port_numbers[USB_MAX_PATH_LEN];
+   int num_ports = libusb_get_port_numbers(device, port_numbers, sizeof(port_numbers));
+   uint8_t bus_number = libusb_get_bus_number(device);
+
+   rv = snprintf(buf, buf_len, "/sys/bus/usb/devices/%d-", bus_number);
+   if (rv < 0) {
+      return -1;
+   }
+   else {
+      count += rv;
+   }
+   for (int j = 0; j < num_ports; j++) {
+      if (j < num_ports - 1) {
+         rv = snprintf(buf + count, buf_len, "%d.", port_numbers[j]);
+         if (rv < 0) {
+            return -1;
+         }
+         else {
+            count += rv;
+         }
+      }
+      else {
+         rv = snprintf(buf + count, buf_len, "%d", port_numbers[j]);
+         if (rv < 0) {
+            return -1;
+         }
+         else {
+            count += rv;
+         }
+      }
+   }
+   snprintf(buf + count, buf_len, "/serial");
+   log_info("Looking up device serial number from file path: %s\n", buf);
+   return 0;
+}
+
+int get_device_serial_number(const char * filepath, char * buf, int buf_len) {
+   if (buf == NULL) {
+      log_error("Cannot write serial number with NULL buffer");
+      return -1;
+   }
+   if (filepath == NULL) {
+      log_error("Cannot open sysfs file with NULL filepath");
+      return -1;
+   }
+   FILE* serial_file = fopen(filepath, "r");
+   if (serial_file != NULL) {
+      fread(buf, sizeof(char), buf_len, serial_file);
+      log_info("Read serial number from sysfs file: %s", buf);
+      fclose(serial_file);
+      return 0;
+   }
+   else {
+      log_error("Failed to open sysfs serial number file!");
+      return -1;
+   }
+}
+
 
 LIBUSB_CALL static void async_callback(struct libusb_transfer *transfer) {
     if (libusb_state != LIB_USB_TRANSFERS_ALLOCATED) {
