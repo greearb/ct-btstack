@@ -92,11 +92,13 @@ static const btstack_tlv_t * tlv_impl;
 static btstack_tlv_posix_t   tlv_context;
 static bd_addr_t             local_addr;
 static bd_addr_t             targ_addr;
+static bd_addr_t             ctrl_addr; // USB Bluetooth device MAC
 
 /* defined in shared.h */
 char* target_bt_mac_str = NULL;
 char* usb_path_str = NULL;
 char* events_file_path = NULL;
+char* target_controller_mac_str = NULL;
 
 int btstack_main(int argc, const char * argv[]);
 void gen_tlv_path(void);
@@ -316,7 +318,7 @@ void hal_led_toggle(void){
     printf("LED State %u\n", led_state);
 }
 
-static char short_options[] = "hu:e:d:l:r";
+static char short_options[] = "hu:e:d:l:c:r";
 
 static struct option long_options[] = {
     {"help",         no_argument,        NULL,   'h'},
@@ -325,6 +327,7 @@ static struct option long_options[] = {
     {"reset-tlv",    no_argument,        NULL,   'r'},
     {"usbpath",      required_argument,  NULL,   'u'},
     {"target-dev",   required_argument,  NULL,   'd'},
+    {"target-ctrl",  required_argument,  NULL,   'c'},
     {0, 0, 0, 0}
 };
 
@@ -335,6 +338,7 @@ static char *help_options[] = {
     "reset bonding information stored in TLV.",
     "set USB path to Bluetooth Controller.",
     "set MAC address of client device to connect with.",
+    "set MAC address of Bluetooth Controller to connect with."
 };
 
 static char *option_arg_name[] = {
@@ -360,6 +364,7 @@ int main(int argc, const char * argv[]){
 
     uint8_t usb_path[USB_MAX_PATH_LEN];
     int usb_path_len = 0;
+    int target_controller_mac_len = 0;
     const char * log_file_path = NULL;
 
     // parse command line parameters
@@ -386,6 +391,9 @@ int main(int argc, const char * argv[]){
                 break;
             case 'r':
                 tlv_reset = true;
+                break;
+            case 'c':
+                target_controller_mac_str = optarg;
                 break;
             case 'h':
             default:
@@ -419,12 +427,21 @@ int main(int argc, const char * argv[]){
         printf("File for writing event output: %s\n", events_file_path);
     }
 
+    if (target_controller_mac_str != NULL) {
+       printf("Bluetooth controller to connect with: %s\n", target_controller_mac_str);
+       target_controller_mac_len = strlen(target_controller_mac_str);
+       sscanf_bd_addr(target_controller_mac_str, ctrl_addr);
+    }
+
 	/// GET STARTED with BTstack ///
 	btstack_memory_init();
     btstack_run_loop_init(btstack_run_loop_posix_get_instance());
 	    
     if (usb_path_len){
         hci_transport_usb_set_path(usb_path_len, usb_path);
+    }
+    if (target_controller_mac_len) {
+        hci_transport_controller_set_mac(ctrl_addr, true);
     }
 
     // log into file using HCI_DUMP_PACKETLOGGER format

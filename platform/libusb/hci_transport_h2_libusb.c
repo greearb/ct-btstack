@@ -385,6 +385,8 @@ static int usb_path_len;
 static uint8_t usb_path[USB_MAX_PATH_LEN];
 static uint16_t usb_vendor_id;
 static uint16_t usb_product_id;
+static bd_addr_t controller_mac;
+static bool mac_filtering_on;
 
 // transport interface state
 static int usb_transport_open;
@@ -1202,6 +1204,42 @@ static int usb_open(void){
             if (deviceIndex < 0) break;
 
             log_info("USB Bluetooth device found, index %u", deviceIndex);
+
+            // Attempt to match the obtained serial number (which is hopefully a MAC address)
+            // to the MAC address given with the -c option
+            if (mac_filtering_on) {
+               char device_path[256] = {0};
+               char ser_num[32] = {0};
+               bd_addr_t current_dev_addr = {0};
+               // Build device path from bus and port numbers
+               int rv = build_sysfs_path(device_path, devs[deviceIndex], sizeof(device_path));
+               if (rv == 0) {
+                  rv = get_device_serial_number(device_path, ser_num, sizeof(ser_num));
+               }
+               if (rv != 0) {
+                  log_error("Couldn't get serial number from sysfs! Going to open bus IO");
+                  handle = try_open_device(devs[deviceIndex]);
+                  if (!handle) {
+                     continue;
+                  }
+                  int ser_num_size = libusb_get_string_descriptor_ascii(handle, desc.iSerialNumber, ser_num, sizeof(ser_num));
+                  if (ser_num_size < 0) {
+                     if (handle) {
+                        libusb_close(handle);
+                     }
+                     continue;
+                  }
+               }
+               sscanf_bd_addr(ser_num, current_dev_addr);
+               if (bd_addr_cmp(current_dev_addr, controller_mac) != 0) {
+                  log_info("Failed to find a match between current addr: %s and given mac_addr", ser_num);
+                  if (handle) {
+                     libusb_close(handle);
+                  }
+                  continue;
+               }
+               log_info("Found USB Bluetooth device matching given MAC address");
+            }
 
             handle = try_open_device(devs[deviceIndex]);
             if (!handle) continue;

@@ -1,6 +1,6 @@
 /*
  *
- * Written by: Carson Vandegriffe @ Candela Technologies
+ * Authors: Carson Vandegriffe and Wyatt Ayers @ Candela Technologies
  * 
 */
 
@@ -12,5 +12,6 @@
 extern char* target_bt_mac_str;
 extern char* usb_path_str;
 extern char* events_file_path;
+extern char* target_controller_mac_str;
 
 #endif
