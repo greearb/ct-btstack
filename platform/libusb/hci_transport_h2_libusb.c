@@ -964,6 +964,7 @@ static int prepare_device(libusb_device_handle * aHandle){
         } else {
             log_info("Device has only on interface, disabling SCO over HCI");
         }
+        libusb_free_config_descriptor(config_descriptor);
     }
 #endif
 
