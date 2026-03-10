@@ -62,6 +62,11 @@ const hci_transport_t * hci_transport_usb_instance(void);
 void hci_transport_usb_set_path(int len, uint8_t * port_numbers);
 
 /**
+ * @brief Specify USB Bluetooth device via MAC address
+ */
+void hci_transport_controller_set_mac(bd_addr_t target_ctrl_mac, bool filter_by_mac);
+
+/**
  * @brief Add device to list of known Bluetooth USB Controller
  * @param vendor_id
  * @param product_id
